@@ -7,6 +7,7 @@ python-dotenv
 langchain
 langchain_community
 langchain_core
+chromadb
 langchain_chroma
 huggingface_hub
 sentence_transformers
