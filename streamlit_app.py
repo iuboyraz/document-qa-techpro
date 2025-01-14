@@ -1,28 +1,23 @@
 import streamlit as st
-from openai import OpenAI
+import openai
 import pandas as pd
-import PyPDF2
 from io import StringIO
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
+from langchain.chat_models import ChatOpenAI
 import os
-from langchain_openai import ChatOpenAI
 import random
 from streamlit.components.v1 import html
 import time
 
-load_dotenv()
-
-# Show title and description.
-
-# Set up Streamlit page configuration
+# Streamlit page configuration
 st.set_page_config(page_title="Mentoring Chatbot", page_icon="🤖", layout="wide")
 
-# Add social media icons and links
+# Social media links in the header
 st.markdown("""
     <div style="text-align: center; padding-bottom: 10px;">
         <a href="https://www.youtube.com/@TechProEducationUS" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="30" style="margin-right: 10px;"></a>
@@ -47,25 +42,20 @@ st.markdown("""
 
 st.title("Chat with Techpro Education 💬")
 
-# Add sidebar with information
+# Sidebar with company and contact information
 with st.sidebar:
     st.title("About")
     st.markdown("""
     Company:    
-    
     Techproeducation provides quality online IT courses and coding bootcamps with reasonable prices to prepare individuals for next-generation jobs from beginners to IT professionals. 
-    
-    We offer cutting-edge programs used today by leading corporations.
 
-    Contact:
-    
+    Contact:    
     https://www.techproeducation.com/
     info@techproeducation.com            
     +1 585 304 29 59       
     New York City, NY USA
                 
     Programs:
-    
     - FREE ONLINE IT COURSES                
     - AUTOMATION ENGINEER                
     - SOFTWARE DEVELOPMENT                
@@ -74,182 +64,180 @@ with st.sidebar:
     - DIGITAL MARKETING
     """)
 
+# Step 1: User enters OpenAI API Key
+api_key = st.text_input("Enter your OpenAI API key", type="password")
 
-# Upload Excel file
-excel_file = r"/workspaces/document-qa-techpro/chatbot_techpro_final_questions.xlsx"
-data = pd.read_excel(excel_file)
+# Check if the API key is provided
+if api_key:
+    try:
+        openai.api_key = api_key
+        # Test API connection to validate key
+        openai.Completion.create(model="gpt-3.5-turbo", prompt="Test API connection", max_tokens=1)
+        st.success("API Key set successfully!")
+    except Exception as e:
+        st.error(f"Error with API key: {e}")
+else:
+    st.warning("Please enter your OpenAI API key.")
 
-# Convert questions and answers to a list
-questions = data['Questions'].tolist()  
-answers = data['Answers'].tolist()      
+# Step 2: User uploads the Excel file
+uploaded_file = st.file_uploader("Upload your Excel file", type="xlsx")
 
-# Create document objects only after data is read
-documents = [Document(page_content=f"{row['Questions']}\n{row['Answers']}") for _, row in data.iterrows()]
+if uploaded_file and api_key:
+    # Proceed if file is uploaded and API key is set
+    data = pd.read_excel(uploaded_file)
 
-# Determine embedding model
-model_name = "BAAI/bge-base-en" 
-# paraphrase-multilingual-MiniLM-L12-v2
-# sentence-transformers/multi-qa-distilbert-cos-v1
-# all-MiniLM-L6-v2
-encode_kwargs = {'normalize_embeddings': True} 
+    # Create document objects from the dataset
+    questions = data['Questions'].tolist()
+    answers = data['Answers'].tolist()
+    documents = [Document(page_content=f"{row['Questions']}\n{row['Answers']}") for _, row in data.iterrows()]
 
-# Establish embeddings model
-bge_embeddings = HuggingFaceBgeEmbeddings(
-    model_name=model_name,
-    model_kwargs={'device': 'cpu'},
-    encode_kwargs=encode_kwargs
-)
+    # Embeddings model setup
+    model_name = "BAAI/bge-base-en"
+    encode_kwargs = {'normalize_embeddings': True}
 
-# Create database
-persist_directory = 'db'
-if not os.path.exists(persist_directory):
-    os.makedirs(persist_directory)  
+    bge_embeddings = HuggingFaceBgeEmbeddings(
+        model_name=model_name,
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs=encode_kwargs
+    )
 
-# Establish vector database (vectorstore)
-vectordb = Chroma.from_documents(documents=documents, # if "text_splitter()" is used use "documents=texts"
-                                 collection_name="rag-chroma",
-                                 embedding=bge_embeddings,
-                                 persist_directory=persist_directory)
+    # Set up Chroma vector database
+    persist_directory = 'db'
+    if not os.path.exists(persist_directory):
+        os.makedirs(persist_directory)
 
-retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 5})
+    vectordb = Chroma.from_documents(documents=documents,
+                                     collection_name="rag-chroma",
+                                     embedding=bge_embeddings,
+                                     persist_directory=persist_directory)
 
-# Initialize message history
-if "messages" not in st.session_state:  
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Merhaba Ben Techie 🤖. Data Science, Mentoring ve IT alanındaki sorularınıza cevap vermeye çalışacağım."}]
+    retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
-# Wrap the prompt in a function
-def prompt_fn(query: str, context: str) -> str:
-    return f"""
-    You are an experienced IT staff having expertise in Data Science, Information Technology, 
-    Programming Languages, Statistics, Data Visualization, Cloud Systems, Deployment, Project Management and its tools, 
-    Communication systems, Web sites for remote working and Mentoring. 
-    If the user's query matches any question from the database, return the corresponding answer directly. 
-    If the query is within the context, generate only one concise and accurate response in Turkish strictly based on the provided context. 
-    If the query is outside the context, respond only with "Kapsam dışı sorduğunuz sorulara cevap veremiyorum."
+    # Initialize session state for messages
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "Merhaba Ben Techie 🤖. Data Science, Mentoring ve IT alanındaki sorularınıza cevap vermeye çalışacağım."}]
 
-    Context: {context}
-    
-    User's question: {query}"""
+    # Define prompt function
+    def prompt_fn(query: str, context: str) -> str:
+        return f"""
+        You are an experienced IT staff having expertise in Data Science, Information Technology, Programming Languages, 
+        Statistics, Data Visualization, Cloud Systems, Deployment, Project Management and its tools, Communication systems, 
+        Web sites for remote working and Mentoring. If the user's query matches any question from the database, return the 
+        corresponding answer directly. If the query is within the context, generate only one concise and accurate response 
+        in Turkish strictly based on the provided context. If the query is outside the context, respond only with 
+        "Kapsam dışı sorduğunuz sorulara cevap veremiyorum."
+        Context: {context}
+        User's question: {query}"""
 
-# LLM model
-@st.cache_resource
-def load_llm():
-    return ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, max_tokens=150)
+    # Initialize LLM (ChatOpenAI)
+    @st.cache_resource
+    def load_llm():
+        return ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, max_tokens=150)
 
-llm = load_llm()
+    llm = load_llm()
 
-@st.cache_resource
-def create_rag_chain():
-    from langchain_core.runnables import RunnableLambda
-    prompt_runnable = RunnableLambda(lambda inputs: prompt_fn(inputs["query"], inputs["context"]))
-    return prompt_runnable | llm | StrOutputParser()
+    @st.cache_resource
+    def create_rag_chain():
+        from langchain_core.runnables import RunnableLambda
+        prompt_runnable = RunnableLambda(lambda inputs: prompt_fn(inputs["query"], inputs["context"]))
+        return prompt_runnable | llm | StrOutputParser()
 
-rag_chain = create_rag_chain()
+    rag_chain = create_rag_chain()
 
-# Typewriter effect function (Browser-only version)
-def typewriter_effect(text, delay=0.05):
-    """Simulate a typewriter effect by progressively displaying characters on the same line."""
-    display_text = ""
-    placeholder = st.empty()  # Create a placeholder to update the content
-    for char in text:
-        display_text += char
-        placeholder.markdown(f"{display_text}")  # Update the display progressively
-        time.sleep(delay)
+    # Typewriter effect for text display
+    def typewriter_effect(text, delay=0.05):
+        display_text = ""
+        placeholder = st.empty()
+        for char in text:
+            display_text += char
+            placeholder.markdown(f"{display_text}")
+            time.sleep(delay)
 
-# Generate response
-def generate_response(query):
-    # Search the database for the exact answer
-    for _, row in data.iterrows():
-        if query.strip().lower() in row["Questions"].strip().lower():
-            suggestions = "\n".join([f"- {q}" for q in random.sample(questions, k=3)])  
-            return row["Answers"], suggestions  
+    # Generate response based on the query
+    def generate_response(query):
+        for _, row in data.iterrows():
+            if query.strip().lower() in row["Questions"].strip().lower():
+                suggestions = "\n".join([f"- {q}" for q in random.sample(questions, k=3)])
+                return row["Answers"], suggestions
 
-    results = retriever.get_relevant_documents(query)[:3]  
-    context = "\n".join([doc.page_content for doc in results])
-    inputs = {"query": query, "context": context}
-    response = rag_chain.invoke(inputs)
+        results = retriever.get_relevant_documents(query)[:3]
+        context = "\n".join([doc.page_content for doc in results])
+        inputs = {"query": query, "context": context}
+        response = rag_chain.invoke(inputs)
 
-    related_questions = random.sample(questions, k=3)  
-    suggestions = "\n".join([f"- {q}" for q in related_questions])
+        related_questions = random.sample(questions, k=3)
+        suggestions = "\n".join([f"- {q}" for q in related_questions])
 
-    return response, suggestions
+        return response, suggestions
 
-# Display chat messages from session state
-for message in st.session_state["messages"]:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+    # Display chat history
+    for message in st.session_state["messages"]:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
-# Handle user query input
-if query := st.chat_input("Your question"):
-    st.session_state["messages"].append({"role": "user", "content": query})
-    with st.chat_message("user"):
-        st.write(query)
+    # Handle user query input
+    if query := st.chat_input("Your question"):
+        st.session_state["messages"].append({"role": "user", "content": query})
+        with st.chat_message("user"):
+            st.write(query)
 
-    # Generate response with typewriter effect
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response, suggestions = generate_response(query)
-            
-            # Apply the typewriter effect for response and suggestions
-            typewriter_effect(response)  # Simulating typewriter effect for response
-            st.markdown("### Şu soruları sorabilirsiniz: ")
-            typewriter_effect(suggestions)  # Simulating typewriter effect for suggestions
+        # Generate response with typewriter effect
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response, suggestions = generate_response(query)
 
-            # Store assistant's response in session state
-            st.session_state["messages"].append({"role": "assistant", "content": response})
+                # Apply the typewriter effect for response and suggestions
+                typewriter_effect(response)
+                st.markdown("### Şu soruları sorabilirsiniz: ")
+                typewriter_effect(suggestions)
 
-# Add robot avatar to the right of chat input with the name "Techie"
-avatar_html = """
-<style>
-.robot-avatar {
-    position: fixed;
-    right: 30px;
-    bottom: 50px;
-    width: 80px;
-    height: 80px;
-    background: linear-gradient(45deg, #32CD32, #FFFFFF);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: float 2s ease-in-out infinite;
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
-    text-align: center;
-    font-family: Arial, sans-serif;
-}
+                # Store the assistant's response in session state
+                st.session_state["messages"].append({"role": "assistant", "content": response})
 
-.robot-avatar img {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-}
-
-.robot-name {
-    position: absolute;
-    top: -25px;
-    left: 10px;
-    font-size: 16px;
-    font-weight: bold;
-    color: #32CD32;
-    background-color: white;
-    padding: 2px 10px;
-    border-radius: 50px;    
-    text-align: center;
-}
-
-@keyframes float {
-    0%, 100% {
-        transform: translateY(-5px);
+    # Display robot avatar at the bottom right of the screen
+    avatar_html = """
+    <style>
+    .robot-avatar {
+        position: fixed;
+        right: 30px;
+        bottom: 50px;
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(45deg, #32CD32, #FFFFFF);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: float 2s ease-in-out infinite;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        font-family: Arial, sans-serif;
     }
-    50% {
-        transform: translateY(5px);
+
+    .robot-avatar img {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
     }
-}
-</style>
-<div class="robot-avatar">
-    <div class="robot-name">Techie </div>
-    <img src="https://cdn-icons-png.flaticon.com/512/4712/4712109.png" alt="Robot Avatar">
-</div>
-"""
-html(avatar_html, height=200)
+
+    .robot-name {
+        position: absolute;
+        top: -25px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 12px;
+        font-weight: bold;
+        color: #333;
+    }
+    @keyframes float {
+        0% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0); }
+    }
+    </style>
+    <div class="robot-avatar">
+        <div class="robot-name">Techie</div>
+        <img src="https://upload.wikimedia.org/wikipedia/commons/5/55/Robot_face_with_pink_eyes.svg" alt="robot-avatar">
+    </div>
+    """
+    html(avatar_html)
