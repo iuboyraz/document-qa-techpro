@@ -1,12 +1,12 @@
 streamlit
 openai
 pandas
-langchain==0.3.14
+langchain
 langchain-community
-langchain_chroma
-langchain_core
+langchain-chroma
+langchain-core
 langchain-openai
-langchain.schema
+langchain-schema
 huggingface_hub
 python-dotenv
 openpyxl
