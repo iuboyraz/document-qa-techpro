@@ -2,7 +2,7 @@ streamlit
 openai
 pandas
 langchain==0.3.14
-langchain_community
+langchain-community
 langchain_chroma
 langchain_core
 langchain-openai

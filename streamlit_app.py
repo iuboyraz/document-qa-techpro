@@ -8,7 +8,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
-from langchain.chat_models import ChatOpenAI
+#from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 import os
 import random
 from streamlit.components.v1 import html
@@ -64,42 +65,42 @@ with st.sidebar:
     - DIGITAL MARKETING
     """)
 
-# Step 1: User enters OpenAI API Key
-api_key = st.text_input("Enter your OpenAI API key", type="password")
+st.write(
+    "Upload a document below and ask a question about it – GPT will answer! "
+    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
+)
 
-# Check if the API key is provided
+# Input: Get OpenAI API key before file upload
+api_key = st.text_input("OpenAI API Key", type="password")
+if not api_key:
+    st.warning("Please add your OpenAI API key to continue.", icon="🗝️")
+
+openai.api_key = api_key
+
+# Upload Excel file via Streamlit file uploader
 if api_key:
-    try:
-        openai.api_key = api_key
-        # Test API connection to validate key
-        openai.Completion.create(model="gpt-3.5-turbo", prompt="Test API connection", max_tokens=1)
-        st.success("API Key set successfully!")
-    except Exception as e:
-        st.error(f"Error with API key: {e}")
-else:
-    st.warning("Please enter your OpenAI API key.")
+    excel_file = st.file_uploader("Excel dosyanızı yükleyin", type=["xlsx"])
+    if excel_file:
+        # Read Excel file into a DataFrame
+        data = pd.read_excel(excel_file)
+        
+        # Convert questions and answers to a list
+        questions = data['Questions'].tolist()  
+        answers = data['Answers'].tolist()      
 
-# Step 2: User uploads the Excel file
-uploaded_file = st.file_uploader("Upload your Excel file", type="xlsx")
+        # Create document objects
+        documents = [Document(page_content=f"{row['Questions']}\n{row['Answers']}") for _, row in data.iterrows()]
 
-if uploaded_file and api_key:
-    # Proceed if file is uploaded and API key is set
-    data = pd.read_excel(uploaded_file)
+        # Determine embedding model
+        model_name = "BAAI/bge-base-en"
+        encode_kwargs = {'normalize_embeddings': True} 
 
-    # Create document objects from the dataset
-    questions = data['Questions'].tolist()
-    answers = data['Answers'].tolist()
-    documents = [Document(page_content=f"{row['Questions']}\n{row['Answers']}") for _, row in data.iterrows()]
-
-    # Embeddings model setup
-    model_name = "BAAI/bge-base-en"
-    encode_kwargs = {'normalize_embeddings': True}
-
-    bge_embeddings = HuggingFaceBgeEmbeddings(
-        model_name=model_name,
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs=encode_kwargs
-    )
+        # Establish embeddings model
+        bge_embeddings = HuggingFaceBgeEmbeddings(
+            model_name=model_name,
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs=encode_kwargs
+        )
 
     # Set up Chroma vector database
     persist_directory = 'db'
