@@ -6,7 +6,6 @@ langchain-community
 langchain-chroma
 langchain-core
 langchain-openai
-langchain-schema
 huggingface_hub
 python-dotenv
 openpyxl

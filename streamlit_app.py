@@ -3,12 +3,11 @@ import openai
 import pandas as pd
 from io import StringIO
 from dotenv import load_dotenv
-from langchain.schema import Document
+#from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
-#from langchain.chat_models import ChatOpenAI
 from langchain_community.chat_models import ChatOpenAI
 import os
 import random
