@@ -3,7 +3,6 @@ import openai
 import pandas as pd
 from io import StringIO
 from dotenv import load_dotenv
-#from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_chroma import Chroma
